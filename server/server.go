@@ -59,7 +59,6 @@ func handleConnection(conn net.Conn, data *sync.Map, logs *log.Logger) {
 		}
 		logs.Printf("Received from %s: %s\n", conn.RemoteAddr(), hex.EncodeToString(buffer[:n])) // Выводим полученные данные в hex формате
 		err = json.Unmarshal(buffer[:n], &msg)                                                   // Декодируем данные из JSON
-		logError(err, logs)
 		if logError(err, logs) {
 			continue
 		} else {
