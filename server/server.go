@@ -4,7 +4,6 @@ import (
 	"OPC/loger"
 	"encoding/hex"
 	"encoding/json"
-	"io"
 	"log"
 	"net"
 	"sync"
@@ -24,18 +23,10 @@ type Message struct {
 func Start(address string) {
 	logs := loger.Create("server") //Создание лога
 	logs.Println("Server started")
-
-	//Создание map для хранения данных
-	var data sync.Map
-	data.Store("test", -99.99)
-	//value, ok := data.Load("test")
-	//data.Delete("test")
-
+	var data sync.Map //Создание map для хранения данных
 	logs.Println("Starting TCP server on", address)
-	// Запускаем сервер
-	listener, err := net.Listen("tcp", address)
-	if err != nil {
-		logs.Println("Error starting server:", err)
+	listener, err := net.Listen("tcp", address) // Запускаем сервер
+	if logError(err, logs) {
 		return
 	}
 	defer func() {
@@ -43,11 +34,9 @@ func Start(address string) {
 			logs.Printf("Error closing listener: %v", err)
 		}
 	}()
-
 	for {
 		conn, err := listener.Accept() // Принимаем новое соединение
-		if err != nil {
-			logs.Println("Error accepting connection:", err)
+		if logError(err, logs) {
 			continue
 		}
 		logs.Println("New connection from", conn.RemoteAddr())
@@ -65,27 +54,18 @@ func handleConnection(conn net.Conn, data *sync.Map, logs *log.Logger) {
 	var msg Message              // Наша структура пакета
 	for {
 		n, err := conn.Read(buffer)
-		if err == io.EOF {
-			logs.Println("Connection closed by", conn.RemoteAddr())
+		if logError(err, logs) {
 			break
 		}
-		if err != nil {
-			logs.Println("Error reading from connection:", err)
-			break
-		}
-
-		// Выводим полученные данные в hex формате
-		logs.Printf("Received from %s: %s\n", conn.RemoteAddr(), hex.EncodeToString(buffer[:n]))
-
-		err = json.Unmarshal(buffer[:n], &msg) // Декодируем данные из JSON
-		if err != nil {
-			logs.Println("Error decoding JSON:", err)
+		logs.Printf("Received from %s: %s\n", conn.RemoteAddr(), hex.EncodeToString(buffer[:n])) // Выводим полученные данные в hex формате
+		err = json.Unmarshal(buffer[:n], &msg)                                                   // Декодируем данные из JSON
+		logError(err, logs)
+		if logError(err, logs) {
 			continue
 		} else {
 			logs.Printf("Received from %s: %+v\n", conn.RemoteAddr(), msg)
 			answer(msg, data, conn, logs)
-		} // Выводим результат
-
+		}
 	}
 }
 
@@ -97,46 +77,43 @@ func answer(msg Message, data *sync.Map, conn net.Conn, logs *log.Logger) {
 			logs.Printf("Key %s not found\n", msg.Key)
 			return
 		}
-
 		floatValue, ok := value.(float64)
 		if !ok {
 			logs.Printf("Key %s has non-float64 value: %v\n", msg.Key, value)
 			return
 		}
-
 		ans := Message{CMD: read, Key: msg.Key, Value: floatValue}
 		buff, err := json.Marshal(&ans) // Кодируем ответ в JSON
-		if err != nil {
-			logs.Println("Error encoding JSON:", err)
+		if logError(err, logs) {
 			return
 		}
-
 		_, err = conn.Write(buff) // Отправляем ответ клиенту
-		if err != nil {
-			logs.Printf("Error sending response to %s: %v\n", conn.RemoteAddr(), err)
+		if logError(err, logs) {
 			return
 		}
-
-		logs.Printf("Sent to %s: %+v\n", conn.RemoteAddr(), ans)
-		// Выводим результат
+		logs.Printf("Sent to %s: %+v\n", conn.RemoteAddr(), ans) // Выводим результат
 
 	case write:
 		data.Store(msg.Key, msg.Value)
 		logs.Printf("Key %s set to %v\n", msg.Key, msg.Value)
-
 		ans := Message{CMD: write, Key: msg.Key, Value: msg.Value}
 		buff, err := json.Marshal(&ans) // Кодируем подтверждение
-		if err != nil {
-			logs.Println("Error encoding JSON:", err)
+		if logError(err, logs) {
 			return
 		}
-
 		_, err = conn.Write(buff) // Отправляем подтверждение клиенту
-		if err != nil {
-			logs.Printf("Error sending response to %s: %v\n", conn.RemoteAddr(), err)
+		if logError(err, logs) {
 			return
 		}
-
 		logs.Printf("Sent to %s: %+v\n", conn.RemoteAddr(), ans)
+	}
+}
+
+func logError(err error, logs *log.Logger) bool {
+	if err != nil {
+		logs.Println("Error encountered:", err)
+		return true
+	} else {
+		return false
 	}
 }
